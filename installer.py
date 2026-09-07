@@ -23,7 +23,7 @@ def installer_paddleocr():
         print("Installation terminée !")
 
 # Lancement de l'installation automatique
-installer_paddleocr()
+# installer_paddleocr()
 
 # -------------------------------------------------------------
 # Votre code PaddleOCR (Reconnaissance seule)
@@ -33,6 +33,7 @@ from paddleocr import PaddleOCR
 
 # Initialisation du modèle
 ocr = PaddleOCR(use_textline_orientation=True, lang="en", device="cpu")
+
 
 # Exemple d'appel sur un crop de chiffre :
 # img = cv2.imread("votre_crop.png")
