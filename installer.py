@@ -32,7 +32,7 @@ import cv2
 from paddleocr import PaddleOCR
 
 # Initialisation du modèle
-ocr = PaddleOCR(use_angle_cls=True, lang="en", use_gpu=False)
+ocr = PaddleOCR(use_textline_orientation=True, lang="en", device="cpu")
 
 # Exemple d'appel sur un crop de chiffre :
 # img = cv2.imread("votre_crop.png")
