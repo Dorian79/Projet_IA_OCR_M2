@@ -1,14 +1,24 @@
 import os
 import glob
+import random
 import cv2
 import matplotlib.pyplot as plt
 from paddleocr import PaddleOCR
+import re
 
 # -------------------------------------------------------------------------
 # 1. Configuration
 # -------------------------------------------------------------------------
 DATA_DIR = "Data"
-CHARS = "0123456789.,"  # caractères autorisés (utilisé pour nettoyer les labels)
+TRAIN_RATIO = 0.7
+LABELS_FILE = "labels.txt"
+CHARS = "0123456789.,"
+
+
+
+def clean_prediction(text):
+    """Ne garde que les caractères autorisés (chiffres, point, virgule)."""
+    return "".join(c for c in text if c in CHARS)
 
 # -------------------------------------------------------------------------
 # 2. Chargement des images et des labels (depuis le nom de fichier)
@@ -34,11 +44,26 @@ def load_labels(labels_path):
             labels[filename] = label
     return labels
 
-labels_dict = load_labels("labels.txt")
+labels_dict = load_labels(LABELS_FILE)
 
 def get_label(path):
     filename = os.path.basename(path)
     return labels_dict.get(filename, "")
+
+
+# -------------------------------------------------------------------------
+# 4. Split train / test
+# -------------------------------------------------------------------------
+random.seed(42)
+shuffled = image_files.copy()
+random.shuffle(shuffled)
+
+split_idx = int(TRAIN_RATIO * len(shuffled))
+train_files = shuffled[:split_idx]
+test_files = shuffled[split_idx:]
+
+print(f"Train : {len(train_files)} images | Test : {len(test_files)} images")
+
 
 # -------------------------------------------------------------------------
 # 3. Initialisation de PaddleOCR
@@ -54,43 +79,69 @@ ocr = PaddleOCR(
 # -------------------------------------------------------------------------
 # 4. Inférence sur toutes les images
 # -------------------------------------------------------------------------
-results = []  # liste de tuples (path, vrai_label, prediction)
+# -------------------------------------------------------------------------
+# 6. Fonction d'évaluation (réutilisable pour train et test)
+# -------------------------------------------------------------------------
 
-print("\n--- Reconnaissance en cours ---")
-for path in image_files:
-    true_label = get_label(path)
-    img = cv2.imread(path)
+def preprocess(img):
+    img = cv2.resize(img, None, fx=3, fy=3, interpolation=cv2.INTER_CUBIC)  # agrandir proprement
+    img = cv2.GaussianBlur(img, (3,3), 0)  # réduire le bruit de pixellisation
+    return img
 
-    ocr_result = ocr.predict(img)
-    # Nouvelle API : le résultat est une liste de dicts avec la clé "rec_texts"
-    pred_label = ocr_result[0]["rec_texts"][0] if ocr_result and ocr_result[0]["rec_texts"] else ""
 
-    results.append((path, true_label, pred_label))
-    match = "✓" if pred_label == true_label else "✗"
-    print(f"{match} {os.path.basename(path):20s} | Vrai: '{true_label}' | Prédit: '{pred_label}'")
+def evaluate(files, split_name):
+    print(f"\n--- Reconnaissance sur le set {split_name} ---")
+    results = []
+    for path in files:
+        true_label = get_label(path)
+        img = cv2.imread(path)
+        img = preprocess(img)
+
+        ocr_result = ocr.predict(img)
+        raw_pred = ocr_result[0]["rec_texts"][0] if ocr_result and ocr_result[0]["rec_texts"] else ""
+        pred_label = clean_prediction(raw_pred)
+
+        results.append((path, true_label, pred_label))
+        match = "✓" if pred_label == true_label else "✗"
+        print(f"{match} {os.path.basename(path):20s} | Vrai: '{true_label}' | Prédit: '{pred_label}'")
+
+    correct = sum(1 for _, true, pred in results if true == pred)
+    accuracy = (correct / len(results)) * 100 if results else 0
+    print(f"Précision {split_name} : {accuracy:.1f}% ({correct}/{len(results)})")
+    return results, accuracy
 
 # -------------------------------------------------------------------------
-# 5. Calcul de la précision globale
+# 7. Évaluation sur train et test séparément
 # -------------------------------------------------------------------------
-correct = sum(1 for _, true, pred in results if true == pred)
-accuracy = (correct / len(results)) * 100
-print(f"\nPrécision globale : {accuracy:.1f}% ({correct}/{len(results)})")
+train_results, train_accuracy = evaluate(train_files, "TRAIN")
+test_results, test_accuracy = evaluate(test_files, "TEST")
+
+print(f"\n=== Résumé ===")
+print(f"Précision train : {train_accuracy:.1f}%")
+print(f"Précision test  : {test_accuracy:.1f}%")
 
 # -------------------------------------------------------------------------
-# 6. Affichage de quelques exemples
+# 8. Affichage des résultats du set test
 # -------------------------------------------------------------------------
-n_display = min(8, len(results))
-fig = plt.figure(figsize=(14, 6))
+import math
 
-for i, (path, true_label, pred_label) in enumerate(results[:n_display]):
+n_display = len(test_results)
+n_cols = 5
+n_rows = math.ceil(n_display / n_cols)
+
+fig = plt.figure(figsize=(n_cols * 2.5, n_rows * 2.5))
+
+for i, (path, true_label, pred_label) in enumerate(test_results):
     img_disp = cv2.cvtColor(cv2.imread(path), cv2.COLOR_BGR2RGB)
-    ax = plt.subplot(2, 4, i + 1)
+    ax = plt.subplot(n_rows, n_cols, i + 1)
     ax.imshow(img_disp)
     ax.set_title(
-        f"Vrai: '{true_label}'\nPrédit: '{pred_label}'",
-        color="green" if true_label == pred_label else "red"
+        f"'{true_label}'/'{pred_label}'",
+        color="green" if true_label == pred_label else "red",
+        fontsize=9
     )
     ax.axis("off")
 
+plt.suptitle(f"Résultats sur le set TEST — Précision : {test_accuracy:.1f}%")
 plt.tight_layout()
 plt.show()
