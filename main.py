@@ -14,9 +14,9 @@ import math
 # 1. CONFIGURATION
 # =========================================================================
 
-DATA_DIR = "Data"
+DATA_DIR = "Data2"
 TRAIN_RATIO = 0.7
-LABELS_FILE = "labels.txt"
+LABELS_FILE = "Data2/labels.txt"
 
 # Caractères autorisés dans les prédictions
 CHARS = "0123456789.,"
